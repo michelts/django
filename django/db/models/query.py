@@ -372,7 +372,7 @@ class QuerySet(object):
         qs.query.add_filter(('pk__in', id_list))
         return dict([(obj._get_pk_val(), obj) for obj in qs.iterator()])
 
-    def delete(self):
+    def delete(self, send_signals=True):
         """
         Deletes the records in the current QuerySet.
         """
@@ -400,7 +400,7 @@ class QuerySet(object):
 
             if not seen_objs:
                 break
-            delete_objects(seen_objs)
+            delete_objects(seen_objs, send_signals=send_signals)
 
         # Clear the result cache, in case this QuerySet gets reused.
         self._result_cache = None
@@ -1024,7 +1024,7 @@ def get_cached_row(klass, row, index_start, max_depth=0, cur_depth=0,
                 setattr(obj, f.get_cache_name(), rel_obj)
     return obj, index_end
 
-def delete_objects(seen_objs):
+def delete_objects(seen_objs, send_signals=True):
     """
     Iterate through a list of seen classes, and remove any instances that are
     referred to.
@@ -1052,7 +1052,8 @@ def delete_objects(seen_objs):
 
             # Pre-notify all instances to be deleted.
             for pk_val, instance in items:
-                signals.pre_delete.send(sender=cls, instance=instance)
+                if send_signals:
+                    signals.pre_delete.send(sender=cls, instance=instance)
 
             pk_list = [pk for pk,instance in items]
             del_query = sql.DeleteQuery(cls, connection)
@@ -1086,7 +1087,8 @@ def delete_objects(seen_objs):
                     if field.rel and field.null and field.rel.to in seen_objs:
                         setattr(instance, field.attname, None)
 
-                signals.post_delete.send(sender=cls, instance=instance)
+                if send_signals:
+                    signals.post_delete.send(sender=cls, instance=instance)
                 setattr(instance, cls._meta.pk.attname, None)
 
         if forced_managed:

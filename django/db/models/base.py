@@ -247,7 +247,12 @@ class Model(object):
     _deferred = False
 
     def __init__(self, *args, **kwargs):
-        signals.pre_init.send(sender=self.__class__, args=args, kwargs=kwargs)
+        # We can control the signals calling by pass the "send_signals" keyword
+        # to the model construction (default to True)
+        send_signals = kwargs.pop('send_signals', True)
+
+        if send_signals:
+            signals.pre_init.send(sender=self.__class__, args=args, kwargs=kwargs)
 
         # There is a rather weird disparity here; if kwargs, it's set, then args
         # overrides it. It should be one or the other; don't duplicate the work
@@ -333,7 +338,8 @@ class Model(object):
                     pass
             if kwargs:
                 raise TypeError, "'%s' is an invalid keyword argument for this function" % kwargs.keys()[0]
-        signals.post_init.send(sender=self.__class__, instance=self)
+        if send_signals:
+            signals.post_init.send(sender=self.__class__, instance=self)
 
     def __repr__(self):
         try:
@@ -416,7 +422,7 @@ class Model(object):
             return getattr(self, field_name)
         return getattr(self, field.attname)
 
-    def save(self, force_insert=False, force_update=False):
+    def save(self, force_insert=False, force_update=False, send_signals=True):
         """
         Saves the current instance. Override this in a subclass if you want to
         control the saving process.
@@ -428,12 +434,12 @@ class Model(object):
         if force_insert and force_update:
             raise ValueError("Cannot force both insert and updating in "
                     "model saving.")
-        self.save_base(force_insert=force_insert, force_update=force_update)
+        self.save_base(force_insert=force_insert, force_update=force_update, send_signals=send_signals)
 
     save.alters_data = True
 
     def save_base(self, raw=False, cls=None, origin=None,
-            force_insert=False, force_update=False):
+            force_insert=False, force_update=False, send_signals=True):
         """
         Does the heavy-lifting involved in saving. Subclasses shouldn't need to
         override this method. It's separate from save() in order to hide the
@@ -449,7 +455,8 @@ class Model(object):
         else:
             meta = cls._meta
 
-        if origin:
+        if origin and send_signals:
+            # Test to see if signals are disabled for this action. If not, go about as usual.
             signals.pre_save.send(sender=origin, instance=self, raw=raw)
 
         # If we are in a raw save, save the object exactly as presented.
@@ -522,7 +529,8 @@ class Model(object):
                     setattr(self, meta.pk.attname, result)
             transaction.commit_unless_managed()
 
-        if origin:
+        if origin and send_signals:
+            # Test to see if signals are disabled for this action. If not, go about as usual.
             signals.post_save.send(sender=origin, instance=self,
                 created=(not record_exists), raw=raw)
 
